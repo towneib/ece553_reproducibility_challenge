@@ -8,8 +8,8 @@ src/neural_decoder/lm_decoder.so
 scripts/wandb/
 /home2/ebrahim/neural_seq_decoder/scripts/wandb/
 /home2/ebrahim/neural_seq_decoder/src/neural_decoder/save_best/
-/src/neural_decoder/outputs/
-/src/neural_decoder/unsloth_compiled_cache/
+#/src/neural_decoder/outputs/
+#/src/neural_decoder/unsloth_compiled_cache/
 # C extensions
 *.so
 
@@ -165,3 +165,12 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# Isaac's things
+brain2text25/
+brain2text24/
+.vscode/
+notebooks/.vscode/
+pyversions/__pycache__
+'ter --no-rebase'
+
