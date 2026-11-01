@@ -2,3 +2,6 @@ src/neural_decoder/unsloth_compiled_cache/
 src/neural_decoder/outputs/
 brain2text25/
 brain2text24/
+.vscode/
+notebooks/.vscode/
+pyversions/
