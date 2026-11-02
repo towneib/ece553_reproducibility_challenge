@@ -5,6 +5,51 @@ import scipy
 import numpy as np
 from g2p_en import G2p
 
+# From the Brain2Text'25 competition page/corresponding github
+import h5py
+
+def load_h5py_file(file_path):
+    data = {
+        'neural_features': [],
+        'n_time_steps': [],
+        'seq_class_ids': [],
+        'seq_len': [],
+        'transcriptions': [],
+        'sentence_label': [],
+        'session': [],
+        'block_num': [],
+        'trial_num': [],
+    }
+    # Open the hdf5 file for that day
+    with h5py.File(file_path, 'r') as f:
+
+        keys = list(f.keys())
+
+        # For each trial in the selected trials in that day
+        for key in keys:
+            g = f[key]
+
+            neural_features = g['input_features'][:]
+            n_time_steps = g.attrs['n_time_steps']
+            seq_class_ids = g['seq_class_ids'][:] if 'seq_class_ids' in g else None
+            seq_len = g.attrs['seq_len'] if 'seq_len' in g.attrs else None
+            transcription = g['transcription'][:] if 'transcription' in g else None
+            sentence_label = g.attrs['sentence_label'][:] if 'sentence_label' in g.attrs else None
+            session = g.attrs['session']
+            block_num = g.attrs['block_num']
+            trial_num = g.attrs['trial_num']
+
+            data['neural_features'].append(neural_features)
+            data['n_time_steps'].append(n_time_steps)
+            data['seq_class_ids'].append(seq_class_ids)
+            data['seq_len'].append(seq_len)
+            data['transcriptions'].append(transcription)
+            data['sentence_label'].append(sentence_label)
+            data['session'].append(session)
+            data['block_num'].append(block_num)
+            data['trial_num'].append(trial_num)
+    return data
+
 
 def combine_dicts(dict1, dict2):
     """
@@ -150,11 +195,13 @@ def reorder_electrode_idxs(feats):
     
     return feats_reshaped
     
-
+"""
+For now, I am NOT implementing the logBoth thing. I want data first. Then I can make things fancy
+"""
 def loadFeaturesAndNormalize(sessionPath, logBoth):
 
     # Load data from .mat file
-    dat = scipy.io.loadmat(sessionPath)
+    dat = load_h5py_file(sessionPath)
 
     # Set up new lists to be added to the data structure
     input_features = []
@@ -162,38 +209,46 @@ def loadFeaturesAndNormalize(sessionPath, logBoth):
     frame_lens = []
     block_means = []
     block_stds = []
-    n_trials = dat['sentenceText'].shape[0] # Number of sentences = number of trials
+    n_trials = len(dat['sentence_label']) # It is a list instead of a numpy array in the '25 version
+    #Number of sentences = number of trials
 
+    # The 25' data comes with a lot of these things already, so I just need to pick the electrodes I want
+    # for the features and put things from existing matrices and lists into the ones the '24 code has defined
+    # so it can be reused (even if the implementation is super inefficient)
     #collect area 6v tx1 and spikePow features
     for i in range(n_trials):    
-        #get time series of TX and spike power for this trial
-        #first 128 columns = area 6v only
-        if logBoth:
-            tx_crossings = np.log1p(dat['tx1'][0, i][:, 0:128])
-            log_pow = np.log(dat['spikePow'][0,i][:,0:128])
-            features = np.concatenate([tx_crossings, log_pow], axis=1)
-        else:
-            # tx1 and spikePow are nested weird when it comes out of the .mat file, so the [0, i] is to index the 1x1 array that the actual data is in and access the data for the ith trial
-            # The [:, 0:128] is to then take the first 128 columns from the TxF matrix of either threshold crossing rate or spike band power (T = number of bins, F = number of channels)
-            # T can change (and does) for each trial, as each trial has a different length and thus a different number of 20 ms bins in it
-            # Axis=1 concatenates columns, so you end up with a Tx2*F matrix where columns 0-127 are tx1 and columns 128-255 are spikePow
-            features = np.concatenate([dat['tx1'][0,i][:,0:128], dat['spikePow'][0,i][:,0:128]], axis=1)
+        # #get time series of TX and spike power for this trial
+        # #first 128 columns = area 6v only
+        # if logBoth:
+        #     tx_crossings = np.log1p(dat['tx1'][0, i][:, 0:128])
+        #     log_pow = np.log(dat['spikePow'][0,i][:,0:128])
+        #     features = np.concatenate([tx_crossings, log_pow], axis=1)
+        # else:
+        #     # tx1 and spikePow are nested weird when it comes out of the .mat file, so the [0, i] is to index the 1x1 array that the actual data is in and access the data for the ith trial
+        #     # The [:, 0:128] is to then take the first 128 columns from the TxF matrix of either threshold crossing rate or spike band power (T = number of bins, F = number of channels)
+        #     # T can change (and does) for each trial, as each trial has a different length and thus a different number of 20 ms bins in it
+        #     # Axis=1 concatenates columns, so you end up with a TxF matrix where columns 0-127 are tx1 and columns 128-255 are spikePow
+        #     features = np.concatenate([dat['tx1'][0,i][:,0:128], dat['spikePow'][0,i][:,0:128]], axis=1)
 
-        sentence_len = features.shape[0] # Number of time bins for a specific trial = T = number of rows in features
-        sentence = dat['sentenceText'][i].strip() # Strip removes white space before and after a sentence
+        #sentence_len = features.shape[0] # Number of time bins for a specific trial = T = number of rows in features
+        #sentence = dat['sentence_label'][i].strip() # Strip removes white space before and after a sentence
+
+        features = np.concatenate([dat['neural_features'][i][:, 0:64], dat['neural_features'][i][:, 256:320], dat['neural_features'][i][:, 192:256], dat['neural_features'][i][:, 448:512]])
 
         input_features.append(features)
-        transcriptions.append(sentence)
-        frame_lens.append(sentence_len)
+        transcriptions.append(dat['sentence_label'][i].strip())
+        #frame_lens.append(sentence_len) ==> This is just the n_time_steps field of dat
+
+    #frame_lens = dat['n_time_steps']
 
     # At this point we have:
-    # input_features: a list of length n_trials whose entries are the Tx2*F arrays of features for each trial
+    # input_features: a list of length n_trials whose entries are the TxF arrays of features for each trial
     # transcriptions: the "sentence" key from the original data put into a normal list of length n_trials. Each entry is the sentence for the ith trial
     # frame_lens: a list of length n_trials with the value of T for each trial, where T is the number of 20ms time bins in that trial
 
     # block-wise feature normalization ==> According to the readme, the data was recorded in blocks that can be used to 
     # "implement blockwise feature normalization (e.g., z-scoring), which helps combat feature nonstationarity."
-    blockNums = np.squeeze(dat['blockIdx']) # Turns the nested array structure from the original data field into a 1d array (squeeze removes dimensions of size 1)
+    blockNums = dat['block_num'] #np.squeeze(dat['blockIdx']) # Turns the nested array structure from the original data field into a 1d array (squeeze removes dimensions of size 1)
     blockList = np.unique(blockNums) # Take the unique values from the list to get the total number of recording blocks within the session
     blocks = []
 
@@ -203,7 +258,7 @@ def loadFeaturesAndNormalize(sessionPath, logBoth):
     # later code breaks or something if int64s are used.
     # The output is blocks, a list of length (number of unique blocks) where each entry is an array of the corresponding trials
     # that were recorded in that block. This will be used for blockwise featured normalization.
-    # EACH BLOCK SEEMS TO HAVE A MAXIMUM OF TWENTY SENTENCES IN IT
+    # EACH BLOCK SEEMS TO HAVE A MAXIMUM OF TWENTY SENTENCES IN IT ==> For the '25 set, each block as 50 sentences, NOT 20 like the '24 set did
     for b in range(len(blockList)):
         sentIdx = np.argwhere(blockNums==blockList[b])
         sentIdx = sentIdx[:,0].astype(np.int32)
@@ -211,27 +266,33 @@ def loadFeaturesAndNormalize(sessionPath, logBoth):
 
     # Does the blockwise feature normalization by z-scoring the data in each block
     for b in range(len(blocks)):
-        # The indexing of input_features is meant to take the Tx2*F matrices for the trials in block b and concatenate them vertically (stacked on each other)
-        # ==> feats ends up being sum(Ts for trials in block b)x2*F
+        # The indexing of input_features is meant to take the TxF matrices for the trials in block b and concatenate them vertically (stacked on each other)
+        # ==> feats ends up being sum(Ts for trials in block b)xF
         # The blocks[b][0] gets the index of the first trial in the bth block
         # The blocks[b][-1] + 1 gets the index of the last trial in the bth block. The +1 is because python indexing is [inclusive:exclusive]
         # The reorder_electrode_idxs is so the feature means and stds (which are vectors) are substracted from the right features later on (I think
         # that if they just did "reorder_electrode_idxs" after everything instead of running it twice, they would get the exact same result)
-        feats = reorder_electrode_idxs(np.concatenate(input_features[blocks[b][0]:(blocks[b][-1]+1)], axis=0))
-        # feats = np.concatenate(input_features[blocks[b][0]:(blocks[b][-1]+1)], axis=0)
+        
+        # ==> I already did the reordering (it is currently hard-coded in)
+        # feats = reorder_electrode_idxs(np.concatenate(input_features[blocks[b][0]:(blocks[b][-1]+1)], axis=0))
+        feats = np.concatenate(input_features[blocks[b][0]:(blocks[b][-1]+1)], axis=0)
 
-        feats_mean = np.mean(feats, axis=0, keepdims=True)  # Calculate the mean of all of the features (axis = 0 means you are taking the mean of each row, which is a vector of length 2*F)
+        feats_mean = np.mean(feats, axis=0, keepdims=True)  # Calculate the mean of all of the features (axis = 0 means you are taking the mean of each row, which is a vector of length F)
         feats_std = np.std(feats, axis=0, keepdims=True) # Same as np.mean but for the standard deviation
         for i in blocks[b]: # For the trial indices in the bth block
-            input_features[i] = reorder_electrode_idxs(input_features[i]) # Do the idx reordering
+            #input_features[i] = reorder_electrode_idxs(input_features[i]) # Do the idx reordering
             input_features[i] = (input_features[i] - feats_mean) / (feats_std + 1e-8) # Z-score normalization by the feature means and stds of all trials in the bth block, 1e-8 prevents divide by 0
 
     #convert to tfRecord file ==> Zero idea as to what this means
     session_data = { # Put the new reformatted things into a struct and return
         'inputFeatures': input_features,
         'transcriptions': transcriptions,
-        'frameLens': frame_lens, 
-        'blockNums': blockNums
+        'frameLens': np.array(dat['n_time_steps']), 
+        'blockNums': blockNums,
+        'text': dat['seq_class_ids'],
+        'textLens': np.array(dat['seq_len']),
+
+        
     }
 
     return session_data
@@ -246,7 +307,7 @@ def getDataset(fileName, logBoth, output_type="phoneme"):
     seq_phone = []    # for phonemes  (secondary text2, only when output_type == 'both')
     # Iterate over every trial
     for x in range(len(session_data['inputFeatures'])):
-        allDat.append(session_data['inputFeatures'][x]) # Add Tx2*F feature matrix for xth trial to list of feature matrices for all of the data in this session
+        allDat.append(session_data['inputFeatures'][x]) # Add TxF feature matrix for xth trial to list of feature matrices for all of the data in this session
         trueSentences.append(session_data['transcriptions'][x]) # Same but adding all of the sentences to a list of all trial sentences in this session
 
         # clean sentence
@@ -257,69 +318,71 @@ def getDataset(fileName, logBoth, output_type="phoneme"):
         maxSeqLen = 500
 
         # ----- build phoneme ids (used for 'phoneme' or 'both') ----- ==> See http://www.speech.cs.cmu.edu/cgi-bin/cmudict for explanations of phonemes
-        if output_type in ('phoneme', 'both'):
-            phonemes = []
-            for p in g2p(thisTranscription):
-                if addInterWordSymbol and p == ' ':
-                    phonemes.append('SIL') # Adds in "SILENCE" as a phoneme (literally denotes silence)
-                p = re.sub(r'[0-9]', '', p)           # remove stress ==> g2p returns things like AA0 and AA1, which are both an "AA" phoneme but with the stress in different places
-                if re.match(r'[A-Z]+', p):            # keep only phoneme labels
-                    phonemes.append(p)
-            if addInterWordSymbol:
-                phonemes.append('SIL') # Adds "SILENCE" after the end of the sentence, maybe to make it so after every word there is a "SIL"?
+        # if output_type in ('phoneme', 'both'):
+        #     phonemes = []
+        #     for p in g2p(thisTranscription):
+        #         if addInterWordSymbol and p == ' ':
+        #             phonemes.append('SIL') # Adds in "SILENCE" as a phoneme (literally denotes silence)
+        #         p = re.sub(r'[0-9]', '', p)           # remove stress ==> g2p returns things like AA0 and AA1, which are both an "AA" phoneme but with the stress in different places
+        #         if re.match(r'[A-Z]+', p):            # keep only phoneme labels
+        #             phonemes.append(p)
+        #     if addInterWordSymbol:
+        #         phonemes.append('SIL') # Adds "SILENCE" after the end of the sentence, maybe to make it so after every word there is a "SIL"?
 
-            seqLenP = len(phonemes) # Number of phonemes (including SIL if addInterWordSymbol=true) that make up the current sentence
-            seqIDsP = np.zeros([maxSeqLen], dtype=np.int32) # Create a placeholder array that the phoneme ID will be put in ==> Off of the PHONE_DEF_SIL matrix they define
-            seqIDsP[:seqLenP] = [phoneToId(p) + 1 for p in phonemes] # +1 is so IDs are 1 indexed ==> This array has a TON of zeros in it if seqLenP < maxSeqLen
+        #     seqLenP = len(phonemes) # Number of phonemes (including SIL if addInterWordSymbol=true) that make up the current sentence
+        #     seqIDsP = np.zeros([maxSeqLen], dtype=np.int32) # Create a placeholder array that the phoneme ID will be put in ==> Off of the PHONE_DEF_SIL matrix they define
+        #     seqIDsP[:seqLenP] = [phoneToId(p) + 1 for p in phonemes] # +1 is so IDs are 1 indexed ==> This array has a TON of zeros in it if seqLenP < maxSeqLen
 
-        # ----- build char ids (used for 'char' or 'both') -----
-        if output_type in ('char', 'both'):
-            txt = thisTranscription.replace('-', ' ')
-            characters = []
-            for c in txt:
-                if addInterWordSymbol and c == ' ':
-                    characters.append('<sp>')
-                else:
-                    characters.append(c)
-            if addInterWordSymbol:
-                characters.append('<sp>')
+        # # ----- build char ids (used for 'char' or 'both') -----
+        # if output_type in ('char', 'both'):
+        #     txt = thisTranscription.replace('-', ' ')
+        #     characters = []
+        #     for c in txt:
+        #         if addInterWordSymbol and c == ' ':
+        #             characters.append('<sp>')
+        #         else:
+        #             characters.append(c)
+        #     if addInterWordSymbol:
+        #         characters.append('<sp>')
 
-            seqLenC = len(characters)
-            seqIDsC = np.zeros([maxSeqLen], dtype=np.int32)
-            try:
-                seqIDsC[:seqLenC] = [charToId(c) + 1 for c in characters]
-            except Exception:
-                print(txt)
+        #     seqLenC = len(characters)
+        #     seqIDsC = np.zeros([maxSeqLen], dtype=np.int32)
+        #     try:
+        #         seqIDsC[:seqLenC] = [charToId(c) + 1 for c in characters]
+        #     except Exception:
+        #         print(txt)
 
         # ----- save according to output_type -----
         if output_type == 'phoneme':
-            seq_char.append(seqIDsP)          # keep same key names as original ('text' holds the chosen output) ==> They use seq_char because that is what is put into newDataset
-        elif output_type == 'char':
-            seq_char.append(seqIDsC)
-        elif output_type == 'both':
-            seq_char.append(seqIDsC)          # 'text'  -> characters
-            seq_phone.append(seqIDsP)         # 'text2' -> phonemes ==> Added later if output is both
-        else:
-            print("invalid output type, must be 'phoneme', 'char', or 'both'")
-            return 0
+            seq_char.append(session_data['text'][x])          # keep same key names as original ('text' holds the chosen output) ==> They use seq_char because that is what is put into newDataset
+        # elif output_type == 'char':
+        #     seq_char.append(seqIDsC)
+        # elif output_type == 'both':
+        #     seq_char.append(seqIDsC)          # 'text'  -> characters
+        #     seq_phone.append(seqIDsP)         # 'text2' -> phonemes ==> Added later if output is both
+        # else:
+        #     print("invalid output type, must be 'phoneme', 'char', or 'both'")
+        #     return 0
 
     # ----- package dataset -----
     newDataset = {
-        'sentenceDat': allDat, # List of all re-ordered feature matrices (size Tx2*F), length = n_trials
+        'sentenceDat': allDat, # List of all re-ordered feature matrices (size TxF), length = n_trials ==> ONLY OF tx1 and spikePow for the 128 electrodes in 6v!!!!
         'transcriptions': trueSentences, # List of the sentences used in each trial, length = n_trials
         'text': seq_char,                     # primary (chars for 'both') ==> List of all the phoneme IDs corresponding to the PHONE_DEF_SIL matrix defined in the code, length = n_trials
-        'blockNums': session_data['blockNums'] # length = n_trials list containing the recording block each trial belongs to (no modifications have been made to this list)
+        'blockNums': session_data['blockNums'], # length = n_trials list containing the recording block each trial belongs to (no modifications have been made to this list)
+        'textLens': session_data['textLens'],
+        'timeSeriesLens': session_data['frameLens']
     }
 
-    # lengths for primary text
-    timeSeriesLens = [arr.shape[0] for arr in newDataset['sentenceDat']] # list of length = n_trials of the value of T (number of time bins) in each trial
-    textLens = []
-    for arr in newDataset['text']: # Iterates over each element in 'text' = number of phonemes in each trial sentence if output = phoneme (includes SIL if addInterWordSymbol = true)
-        zeroIdx = np.argwhere(arr == 0) # Finds all of the indices were the value is 0 ==> gives a nested array, so you need two indices
-        textLens.append(zeroIdx[0, 0] if zeroIdx.size else arr.shape[0]) # zeroIdx[0, 0] = index where the first 0 is = length of the sentence in phonemes (zeroIdx.size==0 means length = maxSeqLen, so just use arr.shape[0])
+    # # lengths for primary text
+    # timeSeriesLens = [arr.shape[0] for arr in newDataset['sentenceDat']] # list of length = n_trials of the value of T (number of time bins) in each trial
+    # textLens = []
+    # for arr in newDataset['text']: # Iterates over each element in 'text' = number of phonemes in each trial sentence if output = phoneme (includes SIL if addInterWordSymbol = true)
+    #     zeroIdx = np.argwhere(arr == 0) # Finds all of the indices were the value is 0 ==> gives a nested array, so you need two indices
+    #     textLens.append(zeroIdx[0, 0] if zeroIdx.size else arr.shape[0]) # zeroIdx[0, 0] = index where the first 0 is = length of the sentence in phonemes (zeroIdx.size==0 means length = maxSeqLen, so just use arr.shape[0])
 
-    newDataset['timeSeriesLens'] = np.array(timeSeriesLens)
-    newDataset['textLens'] = np.array(textLens)
+    # newDataset['timeSeriesLens'] = np.array(timeSeriesLens)
+    # newDataset['textLens'] = np.array(textLens)
     newDataset['textPerTime'] = newDataset['textLens'].astype(np.float32) / newDataset['timeSeriesLens'].astype(np.float32) # For each trial, divide number of phonemes in sentence by number of time bins for trial to get phonemes per time bin
 
     # add phoneme versions when requested
@@ -333,3 +396,4 @@ def getDataset(fileName, logBoth, output_type="phoneme"):
         newDataset['textPerTime2'] = newDataset['textLens2'].astype(np.float32) / newDataset['timeSeriesLens'].astype(np.float32)
 
     return newDataset
+
