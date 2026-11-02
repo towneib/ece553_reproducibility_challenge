@@ -233,7 +233,7 @@ def loadFeaturesAndNormalize(sessionPath, logBoth):
         #sentence_len = features.shape[0] # Number of time bins for a specific trial = T = number of rows in features
         #sentence = dat['sentence_label'][i].strip() # Strip removes white space before and after a sentence
 
-        features = np.concatenate([dat['neural_features'][i][:, 0:64], dat['neural_features'][i][:, 256:320], dat['neural_features'][i][:, 192:256], dat['neural_features'][i][:, 448:512]])
+        features = np.concatenate([dat['neural_features'][i][:, 0:64], dat['neural_features'][i][:, 256:320], dat['neural_features'][i][:, 192:256], dat['neural_features'][i][:, 448:512]], axis = 1)
 
         input_features.append(features)
         transcriptions.append(dat['sentence_label'][i].strip())
@@ -258,7 +258,7 @@ def loadFeaturesAndNormalize(sessionPath, logBoth):
     # later code breaks or something if int64s are used.
     # The output is blocks, a list of length (number of unique blocks) where each entry is an array of the corresponding trials
     # that were recorded in that block. This will be used for blockwise featured normalization.
-    # EACH BLOCK SEEMS TO HAVE A MAXIMUM OF TWENTY SENTENCES IN IT ==> For the '25 set, each block as 50 sentences, NOT 20 like the '24 set did
+    # EACH BLOCK SEEMS TO HAVE A MAXIMUM OF TWENTY SENTENCES IN IT ==> For the '25 set, each block as a maximum of 50 sentences, NOT 20 like the '24 set did
     for b in range(len(blockList)):
         sentIdx = np.argwhere(blockNums==blockList[b])
         sentIdx = sentIdx[:,0].astype(np.int32)
