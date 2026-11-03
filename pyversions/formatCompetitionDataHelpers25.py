@@ -123,8 +123,9 @@ def charToId(c: str) -> int:
 def idToChar(i: int) -> str:
     return _ID_TO_CHAR[i]
     
-# Take in path to h5py file, list of blocks to include in loaded features, whether to log-normalize features
-def loadFeaturesAndNormalize(sessionPath, blocklist, logBoth):
+# Take in path to h5py file, list of blocks to include in loaded features, whether to log-normalize features, if data is heldout
+# The last param is important because the heldout data has a ton of parameters filled with arrays of 'None' which REALLY breaks things
+def loadFeaturesAndNormalize(sessionPath, blocklist, logBoth, isHoldout):
 
     # Load data from .mat file
     dat = load_h5py_file(sessionPath)
@@ -154,7 +155,13 @@ def loadFeaturesAndNormalize(sessionPath, blocklist, logBoth):
             features = np.concatenate([dat['neural_features'][i][:, 0:64], dat['neural_features'][i][:, 256:320], dat['neural_features'][i][:, 192:256], dat['neural_features'][i][:, 448:512]], axis = 1)
 
         input_features.append(features)
-        transcriptions.append(dat['sentence_label'][i].strip())
+        
+        # Adding try catch so when the heldout data is run, which has arrays filled with 'None', this line doesn't fail
+        if not isHoldout:
+            transcriptions.append(dat['sentence_label'][i].strip())
+        else:
+            transcriptions.append('HELD OUT') # This is what the '24 holdout data has in it
+            # Also handle 
         #frame_lens.append(sentence_len) ==> This is just the n_time_steps field of dat
 
     #frame_lens = dat['n_time_steps']
@@ -207,8 +214,8 @@ def loadFeaturesAndNormalize(sessionPath, blocklist, logBoth):
         'transcriptions': transcriptions,
         'frameLens': np.array(dat['n_time_steps']), 
         'blockNums': blockNums,
-        'text': dat['seq_class_ids'],
-        'textLens': np.array(dat['seq_len']),
+        'text': dat['seq_class_ids'] if not isHoldout else [np.zeros(500) for x in range(0, n_trials)],
+        'textLens': np.array(dat['seq_len']) if not isHoldout else 8.*np.ones(np.array(dat['seq_len']).shape)
 
         
     }
@@ -216,8 +223,8 @@ def loadFeaturesAndNormalize(sessionPath, blocklist, logBoth):
     return session_data
 
 
-def getDataset(fileName, blocklist, logBoth, output_type="phoneme"):
-    session_data = loadFeaturesAndNormalize(fileName, blocklist, logBoth)
+def getDataset(fileName, blocklist, logBoth, isHoldout, output_type="phoneme"):
+    session_data = loadFeaturesAndNormalize(fileName, blocklist, logBoth, isHoldout)
 
     allDat = []
     trueSentences = []
@@ -229,9 +236,9 @@ def getDataset(fileName, blocklist, logBoth, output_type="phoneme"):
         trueSentences.append(session_data['transcriptions'][x]) # Same but adding all of the sentences to a list of all trial sentences in this session
 
         # clean sentence
-        thisTranscription = str(session_data['transcriptions'][x]).strip() # I think this is redundant because they already do it in loadFeaturesandNormalize
-        thisTranscription = re.sub(r'[^a-zA-Z\- \']', '', thisTranscription) # Removes anything from the sentence that isn't a letter, hyphen, space, or apostraphe (thanks Copilot)
-        thisTranscription = thisTranscription.replace('--', '').lower() # Replaces '--' with '' (not sure why this wasn't in the re.sub, maybe too complicated?) and turns sentence to lowercase 
+        # thisTranscription = str(session_data['transcriptions'][x]).strip() # I think this is redundant because they already do it in loadFeaturesandNormalize
+        # thisTranscription = re.sub(r'[^a-zA-Z\- \']', '', thisTranscription) # Removes anything from the sentence that isn't a letter, hyphen, space, or apostraphe (thanks Copilot)
+        # thisTranscription = thisTranscription.replace('--', '').lower() # Replaces '--' with '' (not sure why this wasn't in the re.sub, maybe too complicated?) and turns sentence to lowercase 
         addInterWordSymbol = True
         maxSeqLen = 500
 
