@@ -55,7 +55,7 @@ if year == '24':
     't12.2022.05.19',  't12.2022.06.14',  't12.2022.07.05',  't12.2022.08.02',  't12.2022.08.25',
     't12.2022.05.24',  't12.2022.06.16',  't12.2022.07.14',  't12.2022.08.11']
 elif year == '25':
-     sessionNames = ['t15.2023.08.13']
+     sessionNames = ['t15.2025.04.13']
 
 sessionNames.sort()
 
@@ -133,11 +133,24 @@ print(logBoth)
 # print("Eval days: ", evalCount)
 
 
-data24 = h.getDataset(root + '/brain2text24/competitionData/train/t12.2022.04.28.mat', logBoth)
+# data24 = h.getDataset(root + '/brain2text24/competitionData/train/t12.2022.04.28.mat', logBoth)
 # data_test.hdf5, data_train.hdf5, data_val.hdf5
-data25 = h.load_h5py_file(dataDir + '/' + sessionNames[0] + '/data_train.hdf5')
-data25test = h2.getDataset(dataDir + '/' + sessionNames[0] + '/data_train.hdf5', logBoth)
+#data25 = h.load_h5py_file(dataDir + '/' + sessionNames[0] + '/data_train.hdf5')
+#data25test = h2.getDataset(dataDir + '/' + sessionNames[0] + '/data_train.hdf5', logBoth)
+
+# In 25' version, "test" is the holdout data
+
+#data25test = h2.getDataset(dataDir + '/' + sessionNames[0] + '/data_test.hdf5', logBoth)
+#data25val = h2.getDataset(dataDir + '/' + sessionNames[0] + '/data_val.hdf5', logBoth)
+
+import pandas
+datatest = pandas.read_csv(root + '/brain2text25/t15_copyTaskData_description.csv')
+
 print("DONE")
+
+
+
+
 
 
 

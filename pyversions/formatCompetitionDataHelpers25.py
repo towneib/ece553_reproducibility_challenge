@@ -1,10 +1,5 @@
-import pickle
-import os
 import re
-import scipy
 import numpy as np
-from g2p_en import G2p
-
 # From the Brain2Text'25 competition page/corresponding github
 import h5py
 
@@ -106,22 +101,6 @@ def return_train_validation_blocks(unique_blocks, K, fold_number):
     
     return np.setdiff1d(unique_blocks, blocks_for_val), blocks_for_val
 
-g2p = G2p()
-PHONE_DEF = [
-    'AA', 'AE', 'AH', 'AO', 'AW',
-    'AY', 'B',  'CH', 'D', 'DH',
-    'EH', 'ER', 'EY', 'F', 'G',
-    'HH', 'IH', 'IY', 'JH', 'K',
-    'L', 'M', 'N', 'NG', 'OW',
-    'OY', 'P', 'R', 'S', 'SH',
-    'T', 'TH', 'UH', 'UW', 'V',
-    'W', 'Y', 'Z', 'ZH'
-]
-
-PHONE_DEF_SIL = PHONE_DEF + ['SIL']
-
-def phoneToId(p):
-    return PHONE_DEF_SIL.index(p)
 CHAR_VOCAB = [
     "<sp>",          # space token
     "!", ",", ".", "?", "'",   # punctuation (incl. apostrophe)
@@ -143,61 +122,7 @@ def charToId(c: str) -> int:
 
 def idToChar(i: int) -> str:
     return _ID_TO_CHAR[i]
-
-def reorder_electrode_idxs(feats):
     
-    '''
-    In the original array, first 128 indices of feats are txcrossings, 
-    second 128 features are spikeband power.
-    Here what we do is rearrange feats so that:
-        0-64: tx for inferior
-        64-128: spikepow for inferior
-        128-194: tx for superior
-        194-256: spikepow for superior
-    '''
-    
-    area_6v_superior = np.array([
-    [62,  51,  43,  35,  94,  87,  79,  78],
-    [60,  53,  41,  33,  95,  86,  77,  76],
-    [63,  54,  47,  44,  93,  84,  75,  74],
-    [58,  55,  48,  40,  92,  85,  73,  72],
-    [59,  45,  46,  38,  91,  82,  71,  70],
-    [61,  49,  42,  36,  90,  83,  69,  68],
-    [56,  52,  39,  34,  89,  81,  67,  66],
-    [57,  50,  37,  32,  88,  80,  65,  64]
-    ])
-    
-    superior_combined_array = np.empty(area_6v_superior.size * 2, dtype=area_6v_superior.dtype)  
-    
-    # first 64 features are tx, second 64 are spikeband power
-    superior_combined_array[:64] = area_6v_superior.ravel()
-    superior_combined_array[64:] = area_6v_superior.ravel() + 128   
-
-    area_6v_inferior = np.array([
-        [125, 126, 112, 103,  31,  28,  11,  8],
-        [123, 124, 110, 102,  29,  26,   9,  5],
-        [121, 122, 109, 101,  27,  19,  18,  4],
-        [119, 120, 108, 100,  25,  15,  12,  6],
-        [117, 118, 107,  99,  23,  13,  10,  3],
-        [115, 116, 106,  97,  21,  20,   7,  2],
-        [113, 114, 105,  98,  17,  24,  14,  0],
-        [127, 111, 104,  96,  30,  22,  16,  1]
-    ])
-    
-    inferior_combined_array = np.empty(area_6v_inferior.size * 2, dtype=area_6v_inferior.dtype)  
-    inferior_combined_array[:64] = area_6v_inferior.ravel()
-    inferior_combined_array[64:] = area_6v_inferior.ravel() + 128   
-    
-    feats_reshaped = np.zeros_like(feats)
-    
-    feats_reshaped[:, 0:128] = feats[:, inferior_combined_array.ravel()]
-    feats_reshaped[:, 128:] = feats[:, superior_combined_array.ravel()]
-    
-    return feats_reshaped
-    
-"""
-For now, I am NOT implementing the logBoth thing. I want data first. Then I can make things fancy
-"""
 def loadFeaturesAndNormalize(sessionPath, logBoth):
 
     # Load data from .mat file
@@ -206,9 +131,7 @@ def loadFeaturesAndNormalize(sessionPath, logBoth):
     # Set up new lists to be added to the data structure
     input_features = []
     transcriptions = []
-    frame_lens = []
-    block_means = []
-    block_stds = []
+
     n_trials = len(dat['sentence_label']) # It is a list instead of a numpy array in the '25 version
     #Number of sentences = number of trials
 
@@ -217,23 +140,13 @@ def loadFeaturesAndNormalize(sessionPath, logBoth):
     # so it can be reused (even if the implementation is super inefficient)
     #collect area 6v tx1 and spikePow features
     for i in range(n_trials):    
-        # #get time series of TX and spike power for this trial
-        # #first 128 columns = area 6v only
-        # if logBoth:
-        #     tx_crossings = np.log1p(dat['tx1'][0, i][:, 0:128])
-        #     log_pow = np.log(dat['spikePow'][0,i][:,0:128])
-        #     features = np.concatenate([tx_crossings, log_pow], axis=1)
-        # else:
-        #     # tx1 and spikePow are nested weird when it comes out of the .mat file, so the [0, i] is to index the 1x1 array that the actual data is in and access the data for the ith trial
-        #     # The [:, 0:128] is to then take the first 128 columns from the TxF matrix of either threshold crossing rate or spike band power (T = number of bins, F = number of channels)
-        #     # T can change (and does) for each trial, as each trial has a different length and thus a different number of 20 ms bins in it
-        #     # Axis=1 concatenates columns, so you end up with a TxF matrix where columns 0-127 are tx1 and columns 128-255 are spikePow
-        #     features = np.concatenate([dat['tx1'][0,i][:,0:128], dat['spikePow'][0,i][:,0:128]], axis=1)
-
-        #sentence_len = features.shape[0] # Number of time bins for a specific trial = T = number of rows in features
-        #sentence = dat['sentence_label'][i].strip() # Strip removes white space before and after a sentence
-
-        features = np.concatenate([dat['neural_features'][i][:, 0:64], dat['neural_features'][i][:, 256:320], dat['neural_features'][i][:, 192:256], dat['neural_features'][i][:, 448:512]], axis = 1)
+        
+        # Order: 0-63 ==> Ventral 6v Tx, 64-127 ==> Ventral 6v SBP, 128-191 ==> Dorsal 6v Tx, 192-255 ==> Dorsal 6v SBP
+        if logBoth:
+            # The original code took log1p of Tx and normal log of SBPs
+            features = np.concatenate([np.log1p(dat['neural_features'][i][:, 0:64]), np.log(dat['neural_features'][i][:, 256:320]), np.log1p(dat['neural_features'][i][:, 192:256]), np.log(dat['neural_features'][i][:, 448:512])], axis = 1)
+        else:
+            features = np.concatenate([dat['neural_features'][i][:, 0:64], dat['neural_features'][i][:, 256:320], dat['neural_features'][i][:, 192:256], dat['neural_features'][i][:, 448:512]], axis = 1)
 
         input_features.append(features)
         transcriptions.append(dat['sentence_label'][i].strip())
@@ -317,22 +230,6 @@ def getDataset(fileName, logBoth, output_type="phoneme"):
         addInterWordSymbol = True
         maxSeqLen = 500
 
-        # ----- build phoneme ids (used for 'phoneme' or 'both') ----- ==> See http://www.speech.cs.cmu.edu/cgi-bin/cmudict for explanations of phonemes
-        # if output_type in ('phoneme', 'both'):
-        #     phonemes = []
-        #     for p in g2p(thisTranscription):
-        #         if addInterWordSymbol and p == ' ':
-        #             phonemes.append('SIL') # Adds in "SILENCE" as a phoneme (literally denotes silence)
-        #         p = re.sub(r'[0-9]', '', p)           # remove stress ==> g2p returns things like AA0 and AA1, which are both an "AA" phoneme but with the stress in different places
-        #         if re.match(r'[A-Z]+', p):            # keep only phoneme labels
-        #             phonemes.append(p)
-        #     if addInterWordSymbol:
-        #         phonemes.append('SIL') # Adds "SILENCE" after the end of the sentence, maybe to make it so after every word there is a "SIL"?
-
-        #     seqLenP = len(phonemes) # Number of phonemes (including SIL if addInterWordSymbol=true) that make up the current sentence
-        #     seqIDsP = np.zeros([maxSeqLen], dtype=np.int32) # Create a placeholder array that the phoneme ID will be put in ==> Off of the PHONE_DEF_SIL matrix they define
-        #     seqIDsP[:seqLenP] = [phoneToId(p) + 1 for p in phonemes] # +1 is so IDs are 1 indexed ==> This array has a TON of zeros in it if seqLenP < maxSeqLen
-
         # # ----- build char ids (used for 'char' or 'both') -----
         # if output_type in ('char', 'both'):
         #     txt = thisTranscription.replace('-', ' ')
@@ -374,26 +271,17 @@ def getDataset(fileName, logBoth, output_type="phoneme"):
         'timeSeriesLens': session_data['frameLens']
     }
 
-    # # lengths for primary text
-    # timeSeriesLens = [arr.shape[0] for arr in newDataset['sentenceDat']] # list of length = n_trials of the value of T (number of time bins) in each trial
-    # textLens = []
-    # for arr in newDataset['text']: # Iterates over each element in 'text' = number of phonemes in each trial sentence if output = phoneme (includes SIL if addInterWordSymbol = true)
-    #     zeroIdx = np.argwhere(arr == 0) # Finds all of the indices were the value is 0 ==> gives a nested array, so you need two indices
-    #     textLens.append(zeroIdx[0, 0] if zeroIdx.size else arr.shape[0]) # zeroIdx[0, 0] = index where the first 0 is = length of the sentence in phonemes (zeroIdx.size==0 means length = maxSeqLen, so just use arr.shape[0])
-
-    # newDataset['timeSeriesLens'] = np.array(timeSeriesLens)
-    # newDataset['textLens'] = np.array(textLens)
     newDataset['textPerTime'] = newDataset['textLens'].astype(np.float32) / newDataset['timeSeriesLens'].astype(np.float32) # For each trial, divide number of phonemes in sentence by number of time bins for trial to get phonemes per time bin
 
     # add phoneme versions when requested
-    if output_type == 'both':
-        newDataset['text2'] = seq_phone
-        textLens2 = []
-        for arr in newDataset['text2']:
-            zeroIdx = np.argwhere(arr == 0)
-            textLens2.append(zeroIdx[0, 0] if zeroIdx.size else arr.shape[0])
-        newDataset['textLens2'] = np.array(textLens2)
-        newDataset['textPerTime2'] = newDataset['textLens2'].astype(np.float32) / newDataset['timeSeriesLens'].astype(np.float32)
+    # if output_type == 'both':
+    #     newDataset['text2'] = seq_phone
+    #     textLens2 = []
+    #     for arr in newDataset['text2']:
+    #         zeroIdx = np.argwhere(arr == 0)
+    #         textLens2.append(zeroIdx[0, 0] if zeroIdx.size else arr.shape[0])
+    #     newDataset['textLens2'] = np.array(textLens2)
+    #     newDataset['textPerTime2'] = newDataset['textLens2'].astype(np.float32) / newDataset['timeSeriesLens'].astype(np.float32)
 
     return newDataset
 
