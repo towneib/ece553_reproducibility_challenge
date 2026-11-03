@@ -123,11 +123,16 @@ def charToId(c: str) -> int:
 def idToChar(i: int) -> str:
     return _ID_TO_CHAR[i]
     
-def loadFeaturesAndNormalize(sessionPath, logBoth):
+# Take in path to h5py file, list of blocks to include in loaded features, whether to log-normalize features
+def loadFeaturesAndNormalize(sessionPath, blocklist, logBoth):
 
     # Load data from .mat file
     dat = load_h5py_file(sessionPath)
 
+    # Take out the blocks we don't want
+    blockmask = [dat['block_num'][i] in blocklist for i in range(0, len(dat['block_num']))]
+    for key in dat.keys():
+        dat[key] = [dat[key][x] for x in range(0,len(dat[key])) if blockmask[x] == True]
     # Set up new lists to be added to the data structure
     input_features = []
     transcriptions = []
@@ -211,8 +216,8 @@ def loadFeaturesAndNormalize(sessionPath, logBoth):
     return session_data
 
 
-def getDataset(fileName, logBoth, output_type="phoneme"):
-    session_data = loadFeaturesAndNormalize(fileName, logBoth)
+def getDataset(fileName, blocklist, logBoth, output_type="phoneme"):
+    session_data = loadFeaturesAndNormalize(fileName, blocklist, logBoth)
 
     allDat = []
     trueSentences = []

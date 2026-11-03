@@ -135,17 +135,15 @@ print(logBoth)
 
 # data24 = h.getDataset(root + '/brain2text24/competitionData/train/t12.2022.04.28.mat', logBoth)
 # data_test.hdf5, data_train.hdf5, data_val.hdf5
+
+blocklist = [1, 2, 3]
 #data25 = h.load_h5py_file(dataDir + '/' + sessionNames[0] + '/data_train.hdf5')
-#data25test = h2.getDataset(dataDir + '/' + sessionNames[0] + '/data_train.hdf5', logBoth)
+data25test = h2.getDataset(dataDir + '/' + sessionNames[0] + '/data_train.hdf5', blocklist, logBoth)
 
 # In 25' version, "test" is the holdout data
 
 #data25test = h2.getDataset(dataDir + '/' + sessionNames[0] + '/data_test.hdf5', logBoth)
 #data25val = h2.getDataset(dataDir + '/' + sessionNames[0] + '/data_val.hdf5', logBoth)
-
-import pandas
-datatest = pandas.read_csv(root + '/brain2text25/t15_copyTaskData_description.csv')
-
 print("DONE")
 
 
